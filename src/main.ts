@@ -174,7 +174,7 @@ export const Exp = (): Parser => str => OrChain([
     Num,
 ])(str);
 
-export const ExpParen = ReplaceTag(Chain([OpenParen, Exp(), CloseParen]), "Paren");
+export const ExpParen = Then(OpenParen, Then(Exp(), CloseParen, (a, b) => [Value(a), "", Remaining(b)]), (a, b) => [Value(b), "", Remaining(b)]);
 
 export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
     ModifyVal(ReplaceTag(
@@ -187,6 +187,8 @@ export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
 
 export const ExpAdd = InfixOp(Addition, "+");
 export const ExpMult = InfixOp(Mult, "*");
+export const ExpSub = InfixOp(Addition, "-");
+export const ExpDiv = InfixOp(Addition, "/");
 
 export function RunBase(v: any): number {
     return Evaluate(Value(v));
@@ -196,6 +198,8 @@ export function Evaluate(v: any): number {
     switch (v["t"]) {
         case "+":
             return EvalAdd(v);
+        case "*":
+            return EvalMult(v);
         case "Num":
             return EvalNum(v);
     }
@@ -203,17 +207,18 @@ export function Evaluate(v: any): number {
     return 0.0;
 }
 
-export function EvalNum(v: any): number {
-    return v["c"];
-}
+export const EvalNum = (v: any): number => v["c"];
+export const EvalAdd = (v: any): number => Evaluate(v["l"]) + Evaluate(v["r"]);
+export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"])
 
 // export function EvalParen(v: any): number {
 
 // }
 
-export function EvalAdd(v: any): number {
-    return Evaluate(v["l"]) + Evaluate(v["r"]);
-}
+
 
 console.log(Cap(Exp())("1.23+456"));
 console.log(RunBase(Cap(Exp())("1.23+456")));
+console.log(RunBase(Cap(Exp())("1+2+3+4+5+6")));
+console.log(Exp()("(1+2)*3"));
+console.log(Exp()("1+(2*3)"));

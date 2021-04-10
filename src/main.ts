@@ -1,36 +1,54 @@
 export const Fail = null;
 
-export type Dat = [string | null, string];
+export type DatValue = any | null;
+export type DatTag = string;
+export type DatRemainder = string;
+
+export type Dat = [DatValue, DatTag, DatRemainder];
 // A combiner is a function that combines two output strings
 export type Combiner = (a: Dat, b: Dat) => Dat;
-export const DefComb: Combiner = (a, b) => [Value(a) + Value(b), Remaining(b)];
-// export const TreeComb: Combiner = (a, b) => [{ "a": Value(a), "b": Value(b) }, Remaining(b)];
+// export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b), "lt": Tag(a), "rt": Tag(b) }, "", Remaining(b)];
+export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, "", Remaining(b)];
+
+export const StrComb: Combiner = (a, b) => [Value(a) + Value(b), "", Remaining(b)];
 
 export const Success = (n: Dat) => n[0] !== Fail;
 export const Failed = (n: Dat) => !Success(n);
+export const MkFail = (str: string): Dat => [Fail, "", str];
 export const Value = (n: Dat) => n[0] ?? "";
-export const Remaining = (n: Dat) => n[1];
+export const Tag = (n: Dat) => n[1];
+export const Remaining = (n: Dat) => n[2];
+export const Id = (n: any) => n;
+
+export const ModifyDat = (p: Parser, f: (dat: Dat) => Dat): Parser => str => {
+    let d: Dat = p(str);
+    return Failed(d) ? MkFail(str) : f(d);
+}
+
+export const ReplaceTag = (p: Parser, v: DatTag): Parser => ModifyDat(p, d => [Value(d), v, Remaining(d)]);
+export const ModifyVal = (p: Parser, f: (d: DatValue) => DatValue): Parser => ModifyDat(p, d => [f(Value(d)), Tag(d), Remaining(d)]);
+export const ReplaceVal = (p: Parser, v: DatValue): Parser => ModifyDat(p, d => [v, Tag(d), Remaining(d)]);
 
 export function RunComb(a: Dat, b: Dat, comb: Combiner): Dat {
     if (Failed(a) || Failed(b))
-        return [Fail, Remaining(b)];
+        return MkFail(Remaining(b));
     return comb(a, b);
 }
 
 export type Parser = (str: string) => Dat;
 
-export const Always = (v: string): Parser => (str) => [v, str];
+export const Always = (v: string): Parser => (str) => [v, "", str];
 
 export const Not = (v: Parser): Parser => str => {
     let res: Dat = v(str);
-    return [Success(res) ? Fail : "", Remaining(res)];
+    return [Success(res) ? Fail : "", "", Remaining(res)];
 }
 
 
 export function Then(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
     return (str) => {
         let aRes: Dat = a(str);
-        if (Failed(aRes)) return [Fail, str];
+        if (Failed(aRes)) return MkFail(str);
         let bRes: Dat = b(Remaining(aRes));
         return RunComb(aRes, bRes, comb);
     };
@@ -38,9 +56,9 @@ export function Then(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
 
 export function ThenR(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
     return str => {
-        if (str.length == 0) return [Fail, str];
+        if (str.length == 0) return MkFail(str);
         let skipped: string = "";
-        let bRes: Dat = [Fail, str];
+        let bRes: Dat = MkFail(str);
         for (let i = 1; i < str.length; i++) {
             bRes = b(str.slice(i));
             if (Success(bRes)) {
@@ -62,9 +80,9 @@ export function Or(a: Parser, b: Parser): Parser {
 export function And(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
     return (str) => {
         let aRes: Dat = a(str);
-        if (Failed(aRes)) return [Fail, str];
+        if (Failed(aRes)) return MkFail(str);
         let bRes: Dat = b(str);
-        if (Failed(bRes)) return [Fail, str];
+        if (Failed(bRes)) return MkFail(str);
         return RunComb(aRes, bRes, comb);
     };
 }
@@ -74,7 +92,7 @@ export const EitherOr = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser
 
 export function Chain(chain: Parser[], comb: Combiner = DefComb): Parser {
     return (str) => {
-        if (chain.length == 0) return [Fail, str];
+        if (chain.length == 0) return MkFail(str);
         if (chain.length == 1) return chain[0](str);
         return Then(chain[0], Chain(chain.slice(1), comb), comb)(str);
     };
@@ -82,7 +100,7 @@ export function Chain(chain: Parser[], comb: Combiner = DefComb): Parser {
 
 export function OrChain(chain: Parser[]): Parser {
     return (str) => {
-        if (chain.length == 0) return [Fail, str];
+        if (chain.length == 0) return MkFail(str);
         if (chain.length == 1) return chain[0](str);
         return Or(chain[0], OrChain(chain.slice(1)))(str);
     };
@@ -102,12 +120,13 @@ export const NoneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb
 export const OneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb): Parser =>
     Then(pa, Or(pb, NoneOrManyUntil(pa, pb, comb)), comb);
 
+export const Cap = (p: Parser): Parser => ModifyDat(p, d => [Value(d), "Base", ""]);
+
 export function ReadCharF(predicate: (s: string) => boolean): Parser {
     return (str) => {
-        if (str.length > 0 && predicate(str[0])) {
-            return [str[0], str.slice(1)];
-        }
-        return [Fail, str];
+        if (str.length > 0 && predicate(str[0]))
+            return [str[0], "", str.slice(1)];
+        return MkFail(str);
     };
 }
 
@@ -130,7 +149,7 @@ export const Str = Then(Char('"'), NoneOrManyUntil(AnyChar, Char('"')));
 export const Digit = Chars(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
 
 // Shortest way I could think of to write 'Whitespace'
-export const Air = Chars([" ", "\t", "\n", "\r"]);
+export const Air = Chars([" ", "\t", "\p", "\r"]);
 export const Airs = NoneOrMany(Air);
 export const Comma = Char(",");
 export const Dot = Char(".");
@@ -141,65 +160,60 @@ export const Division = Char("/");
 export const OpenParen = Char("(");
 export const CloseParen = Char(")");
 
-export const Num = EitherOr(OneOrMany(Or(Digit, Comma)), Then(Dot, OneOrMany(Digit)));
+export const Num =
+    ModifyDat(
+        EitherOr(OneOrMany(Or(Digit, Comma), StrComb), Then(Dot, OneOrMany(Digit, StrComb), StrComb), StrComb),
+        d => [{ "c": +Value(d), "t": "Num" }, "", Remaining(d)]
+    );
 
 // Expression
 export const Exp = (): Parser => str => OrChain([
-    Chain([OpenParen, Exp(), CloseParen]),
+    ExpParen,
     ExpAdd,
+    ExpMult,
     Num,
 ])(str);
 
-// export const Exp_2=():Parser=>str=>
+export const ExpParen = ReplaceTag(Chain([OpenParen, Exp(), CloseParen]), "Paren");
 
-export const InfixOp = (op: Parser): Parser => str => Then(ThenR(Exp(), op), Exp())(str);
+export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
+    ModifyVal(ReplaceTag(
+        Then(
+            ThenR(Exp(), op, (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a) }, "", Remaining(b)])
+            , Exp(), (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a)["l"], "r": Value(b) }, "", Remaining(b)]),
+        opTag),
+        Id
+    )(str);
 
-export const ExpAdd = InfixOp(Addition);
+export const ExpAdd = InfixOp(Addition, "+");
+export const ExpMult = InfixOp(Mult, "*");
 
-// export const ExpAdd = (): Parser => str => {
-//     let skipped: Dat = ConsumeUntil(Addition)(str);
-//     if (Failed(skipped)) return [Fail, str];
-//     console.log("\tskipped");
-//     console.log(skipped);
-//     let addDat: Dat = Exp()(Remaining(skipped));
-//     if (Failed(addDat)) return [Fail, str];
-//     console.log("\taddDat");
-//     console.log(addDat);
-//     return [Value(Then(Exp(), Addition)(Value(skipped))) + Value(addDat), Remaining(addDat)];
+export function RunBase(v: any): number {
+    return Evaluate(Value(v));
+}
+
+export function Evaluate(v: any): number {
+    switch (v["t"]) {
+        case "+":
+            return EvalAdd(v);
+        case "Num":
+            return EvalNum(v);
+    }
+    console.log(`Unrecognized tag: ${JSON.stringify(v, null, 4)}`);
+    return 0.0;
+}
+
+export function EvalNum(v: any): number {
+    return v["c"];
+}
+
+// export function EvalParen(v: any): number {
+
 // }
-// OneOrManyUntil(Exp(), Then(Addition, Exp()))(str);
-// Chain([Exp(), Addition, Exp()])(str);
 
-// let s = (str: string) => Exp()(Value(ConsumeUntil(Addition)(str)));
+export function EvalAdd(v: any): number {
+    return Evaluate(v["l"]) + Evaluate(v["r"]);
+}
 
-console.log("One or None");
-console.log(OneOrNone(Char("a"))("bc"));
-console.log(OneOrNone(Char("a"))("abc"));
-console.log(OneOrNone(Char("a"))("aabc"));
-console.log(OneOrNone(Char("a"))("aaabc"));
-
-console.log("One or Many");
-console.log(OneOrMany(Char("a"))("bc"));
-console.log(OneOrMany(Char("a"))("abc"));
-console.log(OneOrMany(Char("a"))("aabc"));
-console.log(OneOrMany(Char("a"))("aaabc"));
-
-console.log("None or Many");
-console.log(NoneOrMany(Char("a"))("bc"));
-console.log(NoneOrMany(Char("a"))("abc"));
-console.log(NoneOrMany(Char("a"))("aabc"));
-console.log(NoneOrMany(Char("a"))("aaabc"));
-
-console.log(Str('"Hello there" That was my string'));
-console.log(Str('"H"'));
-console.log(Str('""'));
-
-console.log(Num("123,456.10203"));
-console.log(Num("123456.10203"));
-console.log(Num("123,456."));
-console.log(Num("123,456"));
-console.log(Num(".10203"));
-
-// console.log(Exp()("(1)"));
-// console.log(Exp()("1 + 2"));
-console.log(Exp()("1.23+456+(45+0.96)"));
+console.log(Cap(Exp())("1.23+456"));
+console.log(RunBase(Cap(Exp())("1.23+456")));

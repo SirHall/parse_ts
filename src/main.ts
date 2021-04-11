@@ -1,3 +1,5 @@
+// Started: ‎Monday, ‎29 ‎March ‎2021, ‏‎10:09:50 AM
+
 export const Fail = null;
 
 export type DatValue = any | null;

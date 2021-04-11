@@ -177,6 +177,7 @@ export const Mult = Chars(["*", "@", ","]);
 export const Division = Char("/");
 export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
+export const Modulo = Char("%");
 
 export const Num =
     ModifyDat(
@@ -190,6 +191,7 @@ export const Exp = (): Parser => str => OrChain([
     ExpSub,
     ExpMult,
     ExpDiv,
+    InfixOp(Modulo, "%"),
     ExpPow,
     ExpFunc("sqrt"),
     ExpParen,
@@ -209,7 +211,7 @@ export const ExpAdd = InfixOp(Addition, "+");
 export const ExpMult = InfixOp(Mult, "*");
 export const ExpSub = InfixOp(Subtraction, "-");
 export const ExpDiv = InfixOp(Division, "/");
-export const ExpPow = InfixOp(Division, "^");
+export const ExpPow = InfixOp(Char("^"), "^");
 
 export const ExpFunc = (funcName: string): Parser => str =>
     ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, Exp(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": funcName }, "", Remaining(d)])(str);
@@ -228,6 +230,7 @@ export function Evaluate(v: any): number {
         case "Num": return EvalNum(v);
         case "^": return EvalPow(v);
         case "sqrt": return EvalSqrt(v);
+        case "%": return EvalModulo(v);
     }
     console.log(`Unrecognized tag: ${JSON.stringify(v, null, 4)}`);
     return 0.0;
@@ -240,6 +243,7 @@ export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"]);
 export const EvalDiv = (v: any): number => Evaluate(v["l"]) / Evaluate(v["r"]);
 export const EvalPow = (v: any): number => Evaluate(v["l"]) ** Evaluate(v["r"]);
 export const EvalSqrt = (v: any): number => Math.sqrt(Evaluate(v["c"]));
+export const EvalModulo = (v: any): number => Evaluate(v["l"]) % Evaluate(v["r"]);
 
 let input = Deno.args.join();
 

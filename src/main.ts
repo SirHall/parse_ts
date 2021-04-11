@@ -106,6 +106,14 @@ export function Chain(chain: Parser[], comb: Combiner = DefComb): Parser {
     };
 }
 
+export function ChainSelect(chain: Parser[], index: number = 0): Parser {
+    return (str) => {
+        if (chain.length == 0) return MkFail(str);
+        if (chain.length == 1) return chain[0](str);
+        return Then(chain[0], ChainSelect(chain.slice(1), index - 1), index == 0 ? LeftComb : RightComb)(str);
+    };
+}
+
 export function OrChain(chain: Parser[]): Parser {
     return (str) => {
         if (chain.length == 0) return MkFail(str);
@@ -143,6 +151,8 @@ export const Chars = (chars: string[]): Parser =>
 
 export const Char = (char: string): Parser => ReadCharF((s) => s === char);
 
+export const Keyword = (word: string): Parser => word.length == 0 ? Always("") : Then(Char(word[0]), Keyword(word.slice(1)), StrComb);
+
 export const Maybe = (v: string): Parser => Or(Char(v), Always(""));
 
 export const AnyChar = ReadCharF((s) => true);
@@ -163,7 +173,7 @@ export const Comma = Char(",");
 export const Dot = Char(".");
 export const Addition = Char("+");
 export const Subtraction = Char("-");
-export const Mult = Chars(["*", "."]);
+export const Mult = Chars(["*", "@", ","]);
 export const Division = Char("/");
 export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
@@ -180,15 +190,17 @@ export const Exp = (): Parser => str => OrChain([
     ExpSub,
     ExpMult,
     ExpDiv,
+    ExpPow,
+    ExpFunc("sqrt"),
     ExpParen,
     Num,
 ])(str);
 
-export const ExpParen = Then(Then(OpenParen, Exp(), RightComb), CloseParen, LeftComb);
+export const ExpParen = Then(Then(Then(OpenParen, Airs, LeftComb), Exp(), RightComb), Then(Airs, CloseParen, RightComb), LeftComb);
 
 export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
     Then(
-        ThenR(Exp(), op, LeftComb),
+        ThenR(Exp(), Then(Airs, Then(op, Airs, LeftComb), RightComb), LeftComb),
         Exp(),
         (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a), "r": Value(b) }, "", Remaining(b)]
     )(str);
@@ -197,6 +209,11 @@ export const ExpAdd = InfixOp(Addition, "+");
 export const ExpMult = InfixOp(Mult, "*");
 export const ExpSub = InfixOp(Subtraction, "-");
 export const ExpDiv = InfixOp(Division, "/");
+export const ExpPow = InfixOp(Division, "^");
+
+export const ExpFunc = (funcName: string): Parser => str =>
+    ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, Exp(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": funcName }, "", Remaining(d)])(str);
+// ReplaceTag(Then(Keyword(funcName), Then(Then(OpenParen, Exp(), RightComb), CloseParen, LeftComb), RightComb), funcName)(str);
 
 export function RunBase(v: any): number {
     return Evaluate(Value(v));
@@ -209,6 +226,8 @@ export function Evaluate(v: any): number {
         case "*": return EvalMult(v);
         case "/": return EvalDiv(v);
         case "Num": return EvalNum(v);
+        case "^": return EvalPow(v);
+        case "sqrt": return EvalSqrt(v);
     }
     console.log(`Unrecognized tag: ${JSON.stringify(v, null, 4)}`);
     return 0.0;
@@ -219,21 +238,10 @@ export const EvalAdd = (v: any): number => Evaluate(v["l"]) + Evaluate(v["r"]);
 export const EvalSub = (v: any): number => Evaluate(v["l"]) - Evaluate(v["r"]);
 export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"]);
 export const EvalDiv = (v: any): number => Evaluate(v["l"]) / Evaluate(v["r"]);
+export const EvalPow = (v: any): number => Evaluate(v["l"]) ** Evaluate(v["r"]);
+export const EvalSqrt = (v: any): number => Math.sqrt(Evaluate(v["c"]));
 
-console.log(JSON.stringify(Exp()("2*(6+3)"), null, 4));
+let input = Deno.args.join();
 
-// console.log(RunBase(Cap(Exp())("2*2+3*3")), "==", 2 * 2 + 3 * 3);
-// console.log(RunBase(Cap(Exp())("1+1/2")), "==", 1 + 1 / 2);
-// console.log(RunBase(Cap(Exp())("1/2+1")), "==", 1 / 2 + 1);
-// console.log(RunBase(Cap(Exp())("1*2/3")), "==", 1 * 2 / 3);
-// console.log(RunBase(Cap(Exp())("2+3/4-5")), "==", 2 + 3 / 4 - 5);
-// console.log(RunBase(Cap(Exp())("5-10*2")), "==", 5 - 10 * 2);
-// console.log(RunBase(Cap(Exp())("2*(6+3)")), "==", 2 * (6 + 3));
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(RunBase(Cap(Exp())("")), "==",);
-// console.log(JSON.stringify(Exp()("7+2*(6+3)/3-7"), null, 4));
-// console.log(RunBase(Cap(Exp())("7+2*(6+3)/3-7")), "==", 7 + 2 * (6 + 3) / 3 - 7);
+console.log(JSON.stringify(Cap(Exp())(input), null, 4));
+console.log(RunBase(Cap(Exp())(input)));

@@ -7,10 +7,11 @@ export type DatRemainder = string;
 export type Dat = [DatValue, DatTag, DatRemainder];
 // A combiner is a function that combines two output strings
 export type Combiner = (a: Dat, b: Dat) => Dat;
-// export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b), "lt": Tag(a), "rt": Tag(b) }, "", Remaining(b)];
-export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, "", Remaining(b)];
 
+export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, "", Remaining(b)];
 export const StrComb: Combiner = (a, b) => [Value(a) + Value(b), "", Remaining(b)];
+export const LeftComb: Combiner = (a, b) => [Value(a), "", Remaining(b)];
+export const RightComb: Combiner = (a, b) => [Value(b), "", Remaining(b)];
 
 export const Success = (n: Dat) => n[0] !== Fail;
 export const Failed = (n: Dat) => !Success(n);
@@ -28,6 +29,10 @@ export const ModifyDat = (p: Parser, f: (dat: Dat) => Dat): Parser => str => {
 export const ReplaceTag = (p: Parser, v: DatTag): Parser => ModifyDat(p, d => [Value(d), v, Remaining(d)]);
 export const ModifyVal = (p: Parser, f: (d: DatValue) => DatValue): Parser => ModifyDat(p, d => [f(Value(d)), Tag(d), Remaining(d)]);
 export const ReplaceVal = (p: Parser, v: DatValue): Parser => ModifyDat(p, d => [v, Tag(d), Remaining(d)]);
+export const ConsumeAll = (p: Parser): Parser => str => {
+    let res: Dat = p(str);
+    return Remaining(res).length > 0 ? MkFail(str) : res;
+}
 
 export function RunComb(a: Dat, b: Dat, comb: Combiner): Dat {
     if (Failed(a) || Failed(b))
@@ -66,7 +71,10 @@ export function ThenR(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
                 break;
             }
         }
-        return RunComb(a(skipped), bRes, comb);
+        if (skipped === "" || Failed(bRes)) return MkFail(str);
+        let aRes = ConsumeAll(a)(skipped);
+        if (Failed(aRes)) return MkFail(str);
+        return RunComb(aRes, bRes, comb);
     };
 }
 
@@ -155,10 +163,10 @@ export const Comma = Char(",");
 export const Dot = Char(".");
 export const Addition = Char("+");
 export const Subtraction = Char("-");
-export const Mult = Char("*");
+export const Mult = Chars(["*", "."]);
 export const Division = Char("/");
-export const OpenParen = Char("(");
-export const CloseParen = Char(")");
+export const OpenParen = Chars(["(", "[", "{"]);
+export const CloseParen = Chars([")", "]", "}"]);
 
 export const Num =
     ModifyDat(
@@ -168,27 +176,27 @@ export const Num =
 
 // Expression
 export const Exp = (): Parser => str => OrChain([
-    ExpParen,
     ExpAdd,
+    ExpSub,
     ExpMult,
+    ExpDiv,
+    ExpParen,
     Num,
 ])(str);
 
-export const ExpParen = Then(OpenParen, Then(Exp(), CloseParen, (a, b) => [Value(a), "", Remaining(b)]), (a, b) => [Value(b), "", Remaining(b)]);
+export const ExpParen = Then(Then(OpenParen, Exp(), RightComb), CloseParen, LeftComb);
 
 export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
-    ModifyVal(ReplaceTag(
-        Then(
-            ThenR(Exp(), op, (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a) }, "", Remaining(b)])
-            , Exp(), (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a)["l"], "r": Value(b) }, "", Remaining(b)]),
-        opTag),
-        Id
+    Then(
+        ThenR(Exp(), op, LeftComb),
+        Exp(),
+        (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a), "r": Value(b) }, "", Remaining(b)]
     )(str);
 
 export const ExpAdd = InfixOp(Addition, "+");
 export const ExpMult = InfixOp(Mult, "*");
-export const ExpSub = InfixOp(Addition, "-");
-export const ExpDiv = InfixOp(Addition, "/");
+export const ExpSub = InfixOp(Subtraction, "-");
+export const ExpDiv = InfixOp(Division, "/");
 
 export function RunBase(v: any): number {
     return Evaluate(Value(v));
@@ -196,12 +204,11 @@ export function RunBase(v: any): number {
 
 export function Evaluate(v: any): number {
     switch (v["t"]) {
-        case "+":
-            return EvalAdd(v);
-        case "*":
-            return EvalMult(v);
-        case "Num":
-            return EvalNum(v);
+        case "+": return EvalAdd(v);
+        case "-": return EvalSub(v);
+        case "*": return EvalMult(v);
+        case "/": return EvalDiv(v);
+        case "Num": return EvalNum(v);
     }
     console.log(`Unrecognized tag: ${JSON.stringify(v, null, 4)}`);
     return 0.0;
@@ -209,16 +216,24 @@ export function Evaluate(v: any): number {
 
 export const EvalNum = (v: any): number => v["c"];
 export const EvalAdd = (v: any): number => Evaluate(v["l"]) + Evaluate(v["r"]);
-export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"])
+export const EvalSub = (v: any): number => Evaluate(v["l"]) - Evaluate(v["r"]);
+export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"]);
+export const EvalDiv = (v: any): number => Evaluate(v["l"]) / Evaluate(v["r"]);
 
-// export function EvalParen(v: any): number {
+console.log(JSON.stringify(Exp()("2*(6+3)"), null, 4));
 
-// }
-
-
-
-console.log(Cap(Exp())("1.23+456"));
-console.log(RunBase(Cap(Exp())("1.23+456")));
-console.log(RunBase(Cap(Exp())("1+2+3+4+5+6")));
-console.log(Exp()("(1+2)*3"));
-console.log(Exp()("1+(2*3)"));
+// console.log(RunBase(Cap(Exp())("2*2+3*3")), "==", 2 * 2 + 3 * 3);
+// console.log(RunBase(Cap(Exp())("1+1/2")), "==", 1 + 1 / 2);
+// console.log(RunBase(Cap(Exp())("1/2+1")), "==", 1 / 2 + 1);
+// console.log(RunBase(Cap(Exp())("1*2/3")), "==", 1 * 2 / 3);
+// console.log(RunBase(Cap(Exp())("2+3/4-5")), "==", 2 + 3 / 4 - 5);
+// console.log(RunBase(Cap(Exp())("5-10*2")), "==", 5 - 10 * 2);
+// console.log(RunBase(Cap(Exp())("2*(6+3)")), "==", 2 * (6 + 3));
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(RunBase(Cap(Exp())("")), "==",);
+// console.log(JSON.stringify(Exp()("7+2*(6+3)/3-7"), null, 4));
+// console.log(RunBase(Cap(Exp())("7+2*(6+3)/3-7")), "==", 7 + 2 * (6 + 3) / 3 - 7);

@@ -14,6 +14,8 @@ export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, ""
 export const StrComb: Combiner = (a, b) => [Value(a) + Value(b), "", Remaining(b)];
 export const LeftComb: Combiner = (a, b) => [Value(a), "", Remaining(b)];
 export const RightComb: Combiner = (a, b) => [Value(b), "", Remaining(b)];
+export const RTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(a), "t": tag, "r": Value(b) }, "", Remaining(b)];
+export const LTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(b), "t": tag, "l": Value(a) }, "", Remaining(b)];
 
 export const Success = (n: Dat) => n[0] !== Fail;
 export const Failed = (n: Dat) => !Success(n);
@@ -175,7 +177,7 @@ export const Comma = Char(",");
 export const Dot = Char(".");
 export const Addition = Char("+");
 export const Subtraction = Char("-");
-export const Mult = Chars(["*", "@", ","]);
+export const Mult = Chars(["*"]);
 export const Division = Char("/");
 export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
@@ -187,6 +189,8 @@ export const Num =
         d => [{ "c": +Value(d), "t": "Num" }, "", Remaining(d)]
     );
 
+let registeredFuncs: { [name: string]: { f: (fArgs: any[]) => number } } = {};
+
 // Expression
 export const Exp = (): Parser => str => OrChain([
     ExpAdd,
@@ -195,7 +199,7 @@ export const Exp = (): Parser => str => OrChain([
     ExpDiv,
     InfixOp(Modulo, "%"),
     ExpPow,
-    ExpFunc("sqrt"),
+    ExpRegisteredFunc(),
     ExpParen,
     Num,
 ])(str);
@@ -215,9 +219,12 @@ export const ExpSub = InfixOp(Subtraction, "-");
 export const ExpDiv = InfixOp(Division, "/");
 export const ExpPow = InfixOp(Char("^"), "^");
 
-export const ExpFunc = (funcName: string): Parser => str =>
-    ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, Exp(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": funcName }, "", Remaining(d)])(str);
-// ReplaceTag(Then(Keyword(funcName), Then(Then(OpenParen, Exp(), RightComb), CloseParen, LeftComb), RightComb), funcName)(str);
+export const ExpFuncArgs = (): Parser => str => Or(ThenR(Exp(), Then(Comma, ExpFuncArgs(), RightComb), RTreeComb("arg")), ModifyDat(Exp(), d => [{ "c": Value(d), "t": "arg", "r": { "c": null, "t": "argend" } }, "", Remaining(d)]))(str);
+
+export const ExpFunc = (funcName: string): Parser =>
+    ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, ExpFuncArgs(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": "func", "func": funcName }, "", Remaining(d)]);
+
+export const ExpRegisteredFunc = (): Parser => OrChain(Object.entries(registeredFuncs).map(n => ExpFunc(n[0])));
 
 export function RunBase(v: any): number {
     return Evaluate(Value(v));
@@ -231,10 +238,10 @@ export function Evaluate(v: any): number {
         case "/": return EvalDiv(v);
         case "Num": return EvalNum(v);
         case "^": return EvalPow(v);
-        case "sqrt": return EvalSqrt(v);
+        case "func": return EvalRegisteredFuncs(v);
         case "%": return EvalModulo(v);
     }
-    console.log(`Unrecognized tag: ${JSON.stringify(v, null, 4)}`);
+    console.log(`Unrecognized tag: '${v["t"]}'\n${JSON.stringify(v, null, 4)}`);
     return 0.0;
 }
 
@@ -244,8 +251,23 @@ export const EvalSub = (v: any): number => Evaluate(v["l"]) - Evaluate(v["r"]);
 export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"]);
 export const EvalDiv = (v: any): number => Evaluate(v["l"]) / Evaluate(v["r"]);
 export const EvalPow = (v: any): number => Evaluate(v["l"]) ** Evaluate(v["r"]);
-export const EvalSqrt = (v: any): number => Math.sqrt(Evaluate(v["c"]));
 export const EvalModulo = (v: any): number => Evaluate(v["l"]) % Evaluate(v["r"]);
+export const EvalFunc = (v: any, f: (a: any[]) => number): number => f.apply(null, [EvalArgs(v["c"]).map((n: any) => n["c"])]);
+export const EvalArgs = (v: any): any[] => {
+    if (v["t"] == "argend") return [];
+    return [v["c"]].concat(EvalArgs(v["r"]));
+}
+export const EvalRegisteredFuncs = (v: any): number => {
+    if (registeredFuncs[v["func"]])
+        return EvalFunc(v, registeredFuncs[v["func"]].f);
+    console.log(`Function '${v["func"]} not recognized`)
+    return 0.0;
+}
+
+export const RegisterFunc = (name: string, f: (fArgs: any[]) => number) => registeredFuncs[name] = { f: f };
+
+RegisterFunc("sqrt", xs => Math.sqrt(xs[0]));
+RegisterFunc("mod", xs => xs[0] % xs[1]);
 
 let input = Deno.args.join();
 

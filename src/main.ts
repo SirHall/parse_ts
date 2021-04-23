@@ -213,7 +213,7 @@ export const ExpParen = Then(Then(ArgOpenParen, Exp(), RightComb), ArgCloseParen
 
 export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
     Then(
-        ThenR(Exp(), Then(Airs, Then(op, Airs, LeftComb), RightComb), LeftComb),
+        ThenR(Exp(), SurroundAir(op), LeftComb),
         Exp(),
         (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a), "r": Value(b) }, "", Remaining(b)]
     )(str);

@@ -183,6 +183,11 @@ export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
 export const Modulo = Char("%");
 
+export const SurroundAir = (p: Parser) => Then(Airs, Then(p, Airs, LeftComb), RightComb);
+export const ArgComma = SurroundAir(Comma);
+export const ArgOpenParen = SurroundAir(OpenParen);
+export const ArgCloseParen = SurroundAir(CloseParen);
+
 export const Num =
     ModifyDat(
         EitherOr(OneOrMany(Or(Digit, Comma), StrComb), Then(Dot, OneOrMany(Digit, StrComb), StrComb), StrComb),
@@ -204,7 +209,7 @@ export const Exp = (): Parser => str => OrChain([
     Num,
 ])(str);
 
-export const ExpParen = Then(Then(Then(OpenParen, Airs, LeftComb), Exp(), RightComb), Then(Airs, CloseParen, RightComb), LeftComb);
+export const ExpParen = Then(Then(ArgOpenParen, Exp(), RightComb), ArgCloseParen, LeftComb);
 
 export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
     Then(
@@ -219,7 +224,12 @@ export const ExpSub = InfixOp(Subtraction, "-");
 export const ExpDiv = InfixOp(Division, "/");
 export const ExpPow = InfixOp(Char("^"), "^");
 
-export const ExpFuncArgs = (): Parser => str => Or(ThenR(Exp(), Then(Comma, ExpFuncArgs(), RightComb), RTreeComb("arg")), ModifyDat(Exp(), d => [{ "c": Value(d), "t": "arg", "r": { "c": null, "t": "argend" } }, "", Remaining(d)]))(str);
+export const ExpFuncArgs = (): Parser => str =>
+    Or(
+        ThenR(Exp(), Then(ArgComma, ExpFuncArgs(), RightComb), RTreeComb("arg")),
+        ModifyDat(Exp(),
+            d => [{ "c": Value(d), "t": "arg", "r": { "c": null, "t": "argend" } }, "", Remaining(d)]
+        ))(str);
 
 export const ExpFunc = (funcName: string): Parser =>
     ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, ExpFuncArgs(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": "func", "func": funcName }, "", Remaining(d)]);
@@ -252,10 +262,10 @@ export const EvalMult = (v: any): number => Evaluate(v["l"]) * Evaluate(v["r"]);
 export const EvalDiv = (v: any): number => Evaluate(v["l"]) / Evaluate(v["r"]);
 export const EvalPow = (v: any): number => Evaluate(v["l"]) ** Evaluate(v["r"]);
 export const EvalModulo = (v: any): number => Evaluate(v["l"]) % Evaluate(v["r"]);
-export const EvalFunc = (v: any, f: (a: any[]) => number): number => f.apply(null, [EvalArgs(v["c"]).map((n: any) => n["c"])]);
+export const EvalFunc = (v: any, f: (a: any[]) => number): number => f.apply(null, [EvalArgs(v["c"])]);
 export const EvalArgs = (v: any): any[] => {
-    if (v["t"] == "argend") return [];
-    return [v["c"]].concat(EvalArgs(v["r"]));
+    if (v["t"] === "argend") return [];
+    return [Evaluate(v["c"])].concat(EvalArgs(v["r"]));
 }
 export const EvalRegisteredFuncs = (v: any): number => {
     if (registeredFuncs[v["func"]])
@@ -268,8 +278,23 @@ export const RegisterFunc = (name: string, f: (fArgs: any[]) => number) => regis
 
 RegisterFunc("sqrt", xs => Math.sqrt(xs[0]));
 RegisterFunc("mod", xs => xs[0] % xs[1]);
+RegisterFunc("round", xs => Math.round(xs[0]));
+RegisterFunc("floor", xs => Math.floor(xs[0]));
+RegisterFunc("ceil", xs => Math.ceil(xs[0]));
+RegisterFunc("sin", xs => Math.sin(xs[0]));
+RegisterFunc("cos", xs => Math.cos(xs[0]));
+RegisterFunc("tan", xs => Math.tan(xs[0]));
+RegisterFunc("atan2", xs => Math.atan2(xs[0], xs[1]));
+RegisterFunc("asin", xs => Math.asin(xs[0]));
+RegisterFunc("acos", xs => Math.acos(xs[0]));
+RegisterFunc("log", xs => Math.log(xs[1]) / Math.log(xs[0]));
+RegisterFunc("log2", xs => Math.log2(xs[0]));
+RegisterFunc("log10", xs => Math.log10(xs[0]));
+RegisterFunc("exp", xs => Math.exp(xs[0]));
+RegisterFunc("rand", xs => Math.random());
 
-let input = Deno.args.join();
 
-console.log(JSON.stringify(Cap(Exp())(input), null, 4));
+let input = Deno.args.join(" ");
+
+// console.log(Deno.inspect(Cap(Exp())(input), { colors: true, depth: 64 }));
 console.log(RunBase(Cap(Exp())(input)));

@@ -211,10 +211,10 @@ export const Air = Chars([" ", "\t", "\p", "\r"]);
 export const Airs = NoneOrMany(Air);
 export const Comma = Char(",");
 export const Dot = Char(".");
-export const Addition = Char("+");
-export const Subtraction = Char("-");
-export const Mult = Chars(["*"]);
-export const Division = Char("/");
+export const Addition = Or(Chars(["+", "a"]), Keyword("add"));
+export const Subtraction = Or(Chars(["-", "s"]), Keyword("sub"));
+export const Mult = Or(Chars(["*", "m"]), Keyword("mult"));
+export const Division = Or(Chars(["/", "d"]), Keyword("div"));
 export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
 export const Modulo = Char("%");
@@ -335,5 +335,5 @@ RegisterFunc("rand", xs => Math.random());
 
 let input = Deno.args.join(" ");
 
-console.log(Exp()(MkInDat(input)));
+// console.log(Exp()(MkInDat(input)));
 console.log(RunBase(Exp()(MkInDat(input))));

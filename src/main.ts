@@ -1,6 +1,5 @@
 // Started: ‎Monday, ‎29 ‎March ‎2021, ‏‎10:09:50 AM
 
-
 export interface InDat {
     str: string;
     pos: InputPos;
@@ -40,21 +39,21 @@ export const Value = (n: Dat) => n[0] ?? "";
 export const Pos = (n: Dat) => n[1];
 export const PosLine = (p: InputPos) => p[0];
 export const PosChar = (p: InputPos) => p[1];
-export const IsNullPos = (p: InputPos) => PosLine(p) < 0 || PosLine(p) < 0;
+export const IsNullPos = (p: InputPos) => PosLine(p) < 0 || PosChar(p) < 0;
 export const Remaining = (n: Dat) => n[2];
 export const Id = (n: any) => n;
 export const DatToIn = (d: Dat): InDat => { return { str: Remaining(d), pos: Pos(d) } };
 
 export const ModifyDat = (p: Parser, f: (dat: Dat) => Dat): Parser => str => {
     let d: Dat = p(str);
-    return Failed(d) ? MkFailD(d) : f(d);
+    return Failed(d) ? d : f(d);
 }
 
 export const ModifyVal = (p: Parser, f: (d: DatValue) => DatValue): Parser => ModifyDat(p, d => [f(Value(d)), Pos(d), Remaining(d)]);
 export const ReplaceVal = (p: Parser, v: DatValue): Parser => ModifyDat(p, d => [v, Pos(d), Remaining(d)]);
 export const ConsumeAll = (p: Parser): Parser => inDat => {
     let res: Dat = p(inDat);
-    return Remaining(res).length > 0 ? MkFailD(res) : res;
+    return Remaining(res).length > 0 ? res : res;
 }
 
 // If the input is a fail, then replace its error message
@@ -70,12 +69,12 @@ export const FailMsgM = (p: Parser, f: (d: Dat) => string): Parser => inDat => {
 }
 
 export function RunComb(a: Dat, b: Dat, comb: Combiner): Dat {
-    if (Failed(a)) return MkFailD(a);
-    if (Failed(b)) return MkFailD(b);
+    if (Failed(a)) return a;
+    if (Failed(b)) return b;
     return comb(a, b);
 }
 
-export const Always = (v: string): Parser => inDat => [v, NullPos, inDat.str];
+export const Always = (v: string): Parser => inDat => [v, inDat.pos, inDat.str];
 
 export const Not = (v: Parser): Parser => inDat => {
     let res: Dat = v(inDat);
@@ -85,12 +84,11 @@ export const Not = (v: Parser): Parser => inDat => {
 
 export const Then = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser => inDat => {
     let aRes: Dat = a(inDat);
-    if (Failed(aRes)) return MkFailD(aRes);
+    if (Failed(aRes)) return aRes;
     let bRes: Dat = b(DatToIn(aRes));
     return RunComb(aRes, bRes, comb);
 }
 
-// TODO: Check if we read a new-line and use that to add to the row/column input position
 export const ThenR = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser => inDat => {
     if (inDat.str.length == 0) return MkFail(inDat.pos);
     let skipped: InDat = { str: "", pos: NullPos };
@@ -102,9 +100,9 @@ export const ThenR = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser =>
             break;
         }
     }
-    if (skipped.str === "" || IsNullPos(skipped.pos) || Failed(bRes)) return MkFail(inDat.pos);
+    if (skipped.str === "" || IsNullPos(skipped.pos) || Failed(bRes)) return bRes;
     let aRes = ConsumeAll(a)(skipped);
-    if (Failed(aRes)) return MkFail(inDat.pos);
+    if (Failed(aRes)) return aRes;
     return RunComb(aRes, bRes, comb);
 };
 
@@ -134,6 +132,7 @@ export const Chain = (chain: Parser[], comb: Combiner = DefComb): Parser => inDa
     return Then(chain[0], Chain(chain.slice(1), comb), comb)(inDat);
 };
 
+// A normal chain, but where only the selected (by index) parser's result is returned
 export const ChainSelect = (chain: Parser[], index: number = 0): Parser => inDat => {
     if (chain.length == 0) return MkFail(inDat.pos, "End of ChainSelect");
     if (chain.length == 1) return chain[0](inDat);
@@ -160,11 +159,9 @@ export const NoneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb
 export const OneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb): Parser =>
     Then(pa, Or(pb, NoneOrManyUntil(pa, pb, comb)), comb);
 
-// export const Cap = (p: Parser): Parser => ModifyDat(p, d => [Value(d), ", ""]);
-
 export const ReadCharF = (predicate: (s: string) => boolean): Parser => inDat => {
     if (inDat.str.length > 0 && predicate(inDat.str[0]))
-        return [inDat.str[0], [inDat.pos[0] + 1, inDat.pos[1]], inDat.str.slice(1)];
+        return [inDat.str[0], [PosLine(inDat.pos), PosChar(inDat.pos) + 1], inDat.str.slice(1)];
     return MkFail(inDat.pos, (inDat.str.length > 0) ?
         `'${inDat.str[0]}' did not match the predicate` :
         `Input string was empty`
@@ -197,7 +194,7 @@ export const Keyword = (word: string): Parser => inDat =>
 
 export const Maybe = (v: string): Parser => Or(Char(v), Always(""));
 
-export const AnyChar = ReadCharF((s) => true);
+export const AnyChar = ReadCharF(s => true);
 
 export const ConsumeUntil = (p: Parser, comb: Combiner = DefComb): Parser =>
     str => NoneOrManyUntil(AnyChar, p, comb)(str);
@@ -209,7 +206,7 @@ export const Str = Then(Char('"'), NoneOrManyUntil(AnyChar, Char('"')));
 export const Digit = Chars(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
 
 // Shortest way I could think of to write 'Whitespace'
-export const NewLine = ModifyDat(Char("\n"), d => ["\n", [0, Pos(d)[1] + 1], Remaining(d)]);
+export const NewLine = ModifyDat(Char("\n"), d => ["\n", [PosLine(Pos(d)) + 1, 0], Remaining(d)]);
 export const Air = Chars([" ", "\t", "\p", "\r"]);
 export const Airs = NoneOrMany(Air);
 export const Comma = Char(",");

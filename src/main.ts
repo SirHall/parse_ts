@@ -220,7 +220,7 @@ export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
 export const Modulo = Char("%");
 
-export const SurroundAir = (p: Parser) => Then(Airs, Then(p, Airs, LeftComb), RightComb);
+export const SurroundAir = (p: Parser) => ChainSelect([Airs, p, Airs], 1);
 export const ArgComma = SurroundAir(Comma);
 export const ArgOpenParen = SurroundAir(OpenParen);
 export const ArgCloseParen = SurroundAir(CloseParen);

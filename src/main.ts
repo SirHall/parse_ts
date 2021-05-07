@@ -211,10 +211,11 @@ export const Air = Chars([" ", "\t", "\p", "\r"]);
 export const Airs = NoneOrMany(Air);
 export const Comma = Char(",");
 export const Dot = Char(".");
-export const Addition = Or(Chars(["+", "a"]), Keyword("add"));
-export const Subtraction = Or(Chars(["-", "s"]), Keyword("sub"));
-export const Mult = Or(Chars(["*", "m"]), Keyword("mult"));
-export const Division = Or(Chars(["/", "d"]), Keyword("div"));
+export const Addition = OrChain([Chars(["+", "a"]), Keyword("add")]);
+export const Subtraction = OrChain([Chars(["-", "s"]), Keyword("sub")]);
+export const Mult = OrChain([Chars(["*", "m"]), Keyword("mult")]);
+export const Division = OrChain([Chars(["/", "d"]), Keyword("div")]);
+export const PowerOf = OrChain([Chars(["^", "p"]), Keyword("pow")]);
 export const OpenParen = Chars(["(", "[", "{"]);
 export const CloseParen = Chars([")", "]", "}"]);
 export const Modulo = Char("%");
@@ -258,7 +259,7 @@ export const ExpAdd = InfixOp(Addition, "+");
 export const ExpMult = InfixOp(Mult, "*");
 export const ExpSub = InfixOp(Subtraction, "-");
 export const ExpDiv = InfixOp(Division, "/");
-export const ExpPow = InfixOp(Char("^"), "^");
+export const ExpPow = InfixOp(PowerOf, "^");
 
 export const ExpFuncArgs = (): Parser => str =>
     Or(

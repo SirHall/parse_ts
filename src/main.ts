@@ -1,100 +1,126 @@
 // Started: ‎Monday, ‎29 ‎March ‎2021, ‏‎10:09:50 AM
 
+
+export interface InDat {
+    str: string;
+    pos: InputPos;
+}
+
+export const MkInDat = (s: string): InDat => Id({ str: s, pos: [0, 0] });
+
+export type Parser = (inDat: InDat) => Dat;
+
 export const Fail = null;
+export const NullPos: InputPos = [-1, -1];
 
 export type DatValue = any | null;
-export type DatTag = string;
+// export type DatTag = string;
+export type LineIndex = number;
+export type CharIndex = number;
+export type InputPos = [LineIndex, CharIndex];
 export type DatRemainder = string;
 
-export type Dat = [DatValue, DatTag, DatRemainder];
+export type Dat = [DatValue, InputPos, DatRemainder];
 // A combiner is a function that combines two output strings
 export type Combiner = (a: Dat, b: Dat) => Dat;
 
-export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, "", Remaining(b)];
-export const StrComb: Combiner = (a, b) => [Value(a) + Value(b), "", Remaining(b)];
-export const LeftComb: Combiner = (a, b) => [Value(a), "", Remaining(b)];
-export const RightComb: Combiner = (a, b) => [Value(b), "", Remaining(b)];
-export const RTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(a), "t": tag, "r": Value(b) }, "", Remaining(b)];
-export const LTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(b), "t": tag, "l": Value(a) }, "", Remaining(b)];
+export const DefComb: Combiner = (a, b) => [{ "l": Value(a), "r": Value(b) }, Pos(b), Remaining(b)];
+export const StrComb: Combiner = (a, b) => [Value(a) + Value(b), Pos(b), Remaining(b)];
+export const LeftComb: Combiner = (a, b) => [Value(a), Pos(b), Remaining(b)];
+export const RightComb: Combiner = (a, b) => [Value(b), Pos(b), Remaining(b)];
+export const RTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(a), "t": tag, "r": Value(b) }, Pos(b), Remaining(b)];
+export const LTreeComb = (tag: string): Combiner => (a, b) => [{ "c": Value(b), "t": tag, "l": Value(a) }, Pos(b), Remaining(b)];
+export const TreeComb = (val: DatValue, tag: string): Combiner => (a, b) => [{ "c": val, "t": tag, "l": Value(a), "r": Value(b) }, Pos(b), Remaining(b)];
 
 export const Success = (n: Dat) => n[0] !== Fail;
 export const Failed = (n: Dat) => !Success(n);
-export const MkFail = (str: string): Dat => [Fail, "", str];
+export const MkFail = (pos: InputPos, msg: string = ""): Dat => [Fail, pos, msg];
+export const MkFailD = (d: Dat, msg: string = ""): Dat => MkFail(Pos(d), msg);
 export const Value = (n: Dat) => n[0] ?? "";
-export const Tag = (n: Dat) => n[1];
+export const Pos = (n: Dat) => n[1];
+export const PosLine = (p: InputPos) => p[0];
+export const PosChar = (p: InputPos) => p[1];
+export const IsNullPos = (p: InputPos) => PosLine(p) < 0 || PosLine(p) < 0;
 export const Remaining = (n: Dat) => n[2];
 export const Id = (n: any) => n;
+export const DatToIn = (d: Dat): InDat => { return { str: Remaining(d), pos: Pos(d) } };
 
 export const ModifyDat = (p: Parser, f: (dat: Dat) => Dat): Parser => str => {
     let d: Dat = p(str);
-    return Failed(d) ? MkFail(str) : f(d);
+    return Failed(d) ? MkFailD(d) : f(d);
 }
 
-export const ReplaceTag = (p: Parser, v: DatTag): Parser => ModifyDat(p, d => [Value(d), v, Remaining(d)]);
-export const ModifyVal = (p: Parser, f: (d: DatValue) => DatValue): Parser => ModifyDat(p, d => [f(Value(d)), Tag(d), Remaining(d)]);
-export const ReplaceVal = (p: Parser, v: DatValue): Parser => ModifyDat(p, d => [v, Tag(d), Remaining(d)]);
-export const ConsumeAll = (p: Parser): Parser => str => {
-    let res: Dat = p(str);
-    return Remaining(res).length > 0 ? MkFail(str) : res;
+export const ModifyVal = (p: Parser, f: (d: DatValue) => DatValue): Parser => ModifyDat(p, d => [f(Value(d)), Pos(d), Remaining(d)]);
+export const ReplaceVal = (p: Parser, v: DatValue): Parser => ModifyDat(p, d => [v, Pos(d), Remaining(d)]);
+export const ConsumeAll = (p: Parser): Parser => inDat => {
+    let res: Dat = p(inDat);
+    return Remaining(res).length > 0 ? MkFailD(res) : res;
+}
+
+// If the input is a fail, then replace its error message
+export const FailMsg = (p: Parser, msg: string): Parser => inDat => {
+    let res: Dat = p(inDat);
+    return Failed(res) ? MkFailD(res, msg) : res;
+}
+
+// If the input is a fail, then modify its error message
+export const FailMsgM = (p: Parser, f: (d: Dat) => string): Parser => inDat => {
+    let res: Dat = p(inDat);
+    return Failed(res) ? MkFailD(res, f(res)) : res;
 }
 
 export function RunComb(a: Dat, b: Dat, comb: Combiner): Dat {
-    if (Failed(a) || Failed(b))
-        return MkFail(Remaining(b));
+    if (Failed(a)) return MkFailD(a);
+    if (Failed(b)) return MkFailD(b);
     return comb(a, b);
 }
 
-export type Parser = (str: string) => Dat;
+export const Always = (v: string): Parser => inDat => [v, NullPos, inDat.str];
 
-export const Always = (v: string): Parser => (str) => [v, "", str];
-
-export const Not = (v: Parser): Parser => str => {
-    let res: Dat = v(str);
-    return [Success(res) ? Fail : "", "", Remaining(res)];
+export const Not = (v: Parser): Parser => inDat => {
+    let res: Dat = v(inDat);
+    return [Success(res) ? Fail : "", Pos(res), Remaining(res)];
 }
 
 
-export function Then(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
-    return (str) => {
-        let aRes: Dat = a(str);
-        if (Failed(aRes)) return MkFail(str);
-        let bRes: Dat = b(Remaining(aRes));
-        return RunComb(aRes, bRes, comb);
-    };
+export const Then = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser => inDat => {
+    let aRes: Dat = a(inDat);
+    if (Failed(aRes)) return MkFailD(aRes);
+    let bRes: Dat = b(DatToIn(aRes));
+    return RunComb(aRes, bRes, comb);
 }
 
-export function ThenR(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
-    return str => {
-        if (str.length == 0) return MkFail(str);
-        let skipped: string = "";
-        let bRes: Dat = MkFail(str);
-        for (let i = 1; i < str.length; i++) {
-            bRes = b(str.slice(i));
-            if (Success(bRes)) {
-                skipped = str.slice(0, i);
-                break;
-            }
+// TODO: Check if we read a new-line and use that to add to the row/column input position
+export const ThenR = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser => inDat => {
+    if (inDat.str.length == 0) return MkFail(inDat.pos);
+    let skipped: InDat = { str: "", pos: NullPos };
+    let bRes: Dat = MkFail(inDat.pos);
+    for (let i = 1; i < inDat.str.length; i++) {
+        bRes = b({ str: inDat.str.slice(i), pos: inDat.pos });
+        if (Success(bRes)) {
+            skipped = { str: inDat.str.slice(0, i), pos: inDat.pos };
+            break;
         }
-        if (skipped === "" || Failed(bRes)) return MkFail(str);
-        let aRes = ConsumeAll(a)(skipped);
-        if (Failed(aRes)) return MkFail(str);
-        return RunComb(aRes, bRes, comb);
-    };
-}
+    }
+    if (skipped.str === "" || IsNullPos(skipped.pos) || Failed(bRes)) return MkFail(inDat.pos);
+    let aRes = ConsumeAll(a)(skipped);
+    if (Failed(aRes)) return MkFail(inDat.pos);
+    return RunComb(aRes, bRes, comb);
+};
 
 export function Or(a: Parser, b: Parser): Parser {
-    return (str) => {
-        let aRes: Dat = a(str);
-        return Success(aRes) ? aRes : b(str);
+    return inDat => {
+        let aRes: Dat = a(inDat);
+        return Success(aRes) ? aRes : b(inDat);
     };
 }
 
 export function And(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
     return (str) => {
         let aRes: Dat = a(str);
-        if (Failed(aRes)) return MkFail(str);
+        if (Failed(aRes)) return aRes; // The source parser should set the message
         let bRes: Dat = b(str);
-        if (Failed(bRes)) return MkFail(str);
+        if (Failed(bRes)) return bRes; // The source parser should set the message
         return RunComb(aRes, bRes, comb);
     };
 }
@@ -102,29 +128,23 @@ export function And(a: Parser, b: Parser, comb: Combiner = DefComb): Parser {
 // Inclusive Or. You can have a then b or either a or b
 export const EitherOr = (a: Parser, b: Parser, comb: Combiner = DefComb): Parser => Or(Then(a, b, comb), Or(a, b));
 
-export function Chain(chain: Parser[], comb: Combiner = DefComb): Parser {
-    return (str) => {
-        if (chain.length == 0) return MkFail(str);
-        if (chain.length == 1) return chain[0](str);
-        return Then(chain[0], Chain(chain.slice(1), comb), comb)(str);
-    };
-}
+export const Chain = (chain: Parser[], comb: Combiner = DefComb): Parser => inDat => {
+    if (chain.length == 0) return MkFail(inDat.pos, "End of Chain");
+    if (chain.length == 1) return chain[0](inDat);
+    return Then(chain[0], Chain(chain.slice(1), comb), comb)(inDat);
+};
 
-export function ChainSelect(chain: Parser[], index: number = 0): Parser {
-    return (str) => {
-        if (chain.length == 0) return MkFail(str);
-        if (chain.length == 1) return chain[0](str);
-        return Then(chain[0], ChainSelect(chain.slice(1), index - 1), index == 0 ? LeftComb : RightComb)(str);
-    };
-}
+export const ChainSelect = (chain: Parser[], index: number = 0): Parser => inDat => {
+    if (chain.length == 0) return MkFail(inDat.pos, "End of ChainSelect");
+    if (chain.length == 1) return chain[0](inDat);
+    return Then(chain[0], ChainSelect(chain.slice(1), index - 1), index == 0 ? LeftComb : RightComb)(inDat);
+};
 
-export function OrChain(chain: Parser[]): Parser {
-    return (str) => {
-        if (chain.length == 0) return MkFail(str);
-        if (chain.length == 1) return chain[0](str);
-        return Or(chain[0], OrChain(chain.slice(1)))(str);
-    };
-}
+export const OrChain = (chain: Parser[]): Parser => inDat => {
+    if (chain.length == 0) return MkFail(inDat.pos, "End of OrChain");
+    if (chain.length == 1) return chain[0](inDat);
+    return Or(chain[0], OrChain(chain.slice(1)))(inDat);
+};
 
 export const OneOrNone = (p: Parser): Parser => Or(p, Always(""));
 
@@ -140,22 +160,40 @@ export const NoneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb
 export const OneOrManyUntil = (pa: Parser, pb: Parser, comb: Combiner = DefComb): Parser =>
     Then(pa, Or(pb, NoneOrManyUntil(pa, pb, comb)), comb);
 
-export const Cap = (p: Parser): Parser => ModifyDat(p, d => [Value(d), "Base", ""]);
+// export const Cap = (p: Parser): Parser => ModifyDat(p, d => [Value(d), ", ""]);
 
-export function ReadCharF(predicate: (s: string) => boolean): Parser {
-    return (str) => {
-        if (str.length > 0 && predicate(str[0]))
-            return [str[0], "", str.slice(1)];
-        return MkFail(str);
-    };
-}
+export const ReadCharF = (predicate: (s: string) => boolean): Parser => inDat => {
+    if (inDat.str.length > 0 && predicate(inDat.str[0]))
+        return [inDat.str[0], [inDat.pos[0] + 1, inDat.pos[1]], inDat.str.slice(1)];
+    return MkFail(inDat.pos, (inDat.str.length > 0) ?
+        `'${inDat.str[0]}' did not match the predicate` :
+        `Input string was empty`
+    );
+};
 
-export const Chars = (chars: string[]): Parser =>
-    (str) => ReadCharF((s) => chars.indexOf(s) >= 0)(str);
+// Parses the next character if it is contained within the 'chars' list
+export const Chars = (chars: string[]): Parser => inDat =>
+    FailMsgM(ReadCharF((s) => chars.indexOf(s) >= 0),
+        d => {
+            if (chars.length === 0) return `Input character list is empty`;
+            if (inDat.str.length === 0) return `Reached end of input string`;
+            return `${inDat.str[0]} is not contained within [${chars.join(' ')}]`;
+        }
+    )(inDat);
 
-export const Char = (char: string): Parser => ReadCharF((s) => s === char);
+export const Char = (char: string): Parser => inDat =>
+    FailMsgM(ReadCharF((s) => s === char),
+        d => {
+            if (inDat.str.length === 0) return `Reached end of input string`;
+            return `${inDat.str[0]} does not match expected character '${char}'`;
+        })(inDat);
 
-export const Keyword = (word: string): Parser => word.length == 0 ? Always("") : Then(Char(word[0]), Keyword(word.slice(1)), StrComb);
+export const Keyword = (word: string): Parser => inDat =>
+    FailMsgM(word.length == 0 ? Always("") : Then(Char(word[0]), Keyword(word.slice(1)), StrComb),
+        d => {
+            if (inDat.str.length === 0) return `Reached end of input string`;
+            return `${inDat.str[0]} does not match expected word '${word}'`;
+        })(inDat);
 
 export const Maybe = (v: string): Parser => Or(Char(v), Always(""));
 
@@ -171,6 +209,7 @@ export const Str = Then(Char('"'), NoneOrManyUntil(AnyChar, Char('"')));
 export const Digit = Chars(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]);
 
 // Shortest way I could think of to write 'Whitespace'
+export const NewLine = ModifyDat(Char("\n"), d => ["\n", [0, Pos(d)[1] + 1], Remaining(d)]);
 export const Air = Chars([" ", "\t", "\p", "\r"]);
 export const Airs = NoneOrMany(Air);
 export const Comma = Char(",");
@@ -189,9 +228,9 @@ export const ArgOpenParen = SurroundAir(OpenParen);
 export const ArgCloseParen = SurroundAir(CloseParen);
 
 export const Num =
-    ModifyDat(
+    ModifyVal(
         EitherOr(OneOrMany(Or(Digit, Comma), StrComb), Then(Dot, OneOrMany(Digit, StrComb), StrComb), StrComb),
-        d => [{ "c": +Value(d), "t": "Num" }, "", Remaining(d)]
+        d => Id({ "c": +d, "t": "Num" })
     );
 
 let registeredFuncs: { [name: string]: { f: (fArgs: any[]) => number } } = {};
@@ -211,11 +250,11 @@ export const Exp = (): Parser => str => OrChain([
 
 export const ExpParen = Then(Then(ArgOpenParen, Exp(), RightComb), ArgCloseParen, LeftComb);
 
-export const InfixOp = (op: Parser, opTag: DatTag): Parser => str =>
+export const InfixOp = (op: Parser, opTag: string): Parser => str =>
     Then(
         ThenR(Exp(), SurroundAir(op), LeftComb),
         Exp(),
-        (a, b) => [{ "c": opTag, "t": opTag, "l": Value(a), "r": Value(b) }, "", Remaining(b)]
+        TreeComb(opTag, opTag)
     )(str);
 
 export const ExpAdd = InfixOp(Addition, "+");
@@ -227,12 +266,15 @@ export const ExpPow = InfixOp(Char("^"), "^");
 export const ExpFuncArgs = (): Parser => str =>
     Or(
         ThenR(Exp(), Then(ArgComma, ExpFuncArgs(), RightComb), RTreeComb("arg")),
-        ModifyDat(Exp(),
-            d => [{ "c": Value(d), "t": "arg", "r": { "c": null, "t": "argend" } }, "", Remaining(d)]
+        ModifyVal(Exp(),
+            v => Id({ "c": v, "t": "arg", "r": { "c": null, "t": "argend" } })
         ))(str);
 
 export const ExpFunc = (funcName: string): Parser =>
-    ModifyDat(ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, ExpFuncArgs(), Airs, CloseParen, Airs], 5), d => [{ "c": Value(d), "t": "func", "func": funcName }, "", Remaining(d)]);
+    ModifyVal(
+        ChainSelect([Airs, Keyword(funcName), Airs, OpenParen, Airs, ExpFuncArgs(), Airs, CloseParen, Airs], 5),
+        v => Id({ "c": v, "t": "func", "func": funcName })
+    );
 
 export const ExpRegisteredFunc = (): Parser => OrChain(Object.entries(registeredFuncs).map(n => ExpFunc(n[0])));
 
@@ -296,5 +338,5 @@ RegisterFunc("rand", xs => Math.random());
 
 let input = Deno.args.join(" ");
 
-// console.log(Deno.inspect(Cap(Exp())(input), { colors: true, depth: 64 }));
-console.log(RunBase(Cap(Exp())(input)));
+console.log(Exp()(MkInDat(input)));
+console.log(RunBase(Exp()(MkInDat(input))));
